@@ -22,17 +22,17 @@ class RunnerConfig:
     name = "s25_llama_thesis_experiment"
     results_output_path = ROOT_DIR / 'results'
     operation_type = OperationType.AUTO
-    time_between_runs_in_ms = 3000  # 3 min cool-down between runs
+    time_between_runs_in_ms = 200000  # 3 min cool-down between runs
 
     # --- Device & ADB Settings ---
     ADB_PATH = "adb" 
-    DEVICE_ID = "R5CY50M8TDM"  # "192.168.43.227:5555" | "R5CY50M8TDM"
+    DEVICE_ID = "192.168.43.162:5555"  # "192.168.43.227:5555" | "R5CY50M8TDM"
     REMOTE_DIR = "/data/local/tmp"
     BINARY_NAME = "llama-cli"
     
     # --- Local Paths ---
     LOCAL_LLAMA_BUILD = os.path.expanduser("~/llm_on_device/llama.cpp/build-android/bin")
-    LOCAL_MODEL_PATH = "/mnt/d/GoogleDriveMirror/UNI/Thesis/Files/script/models"
+    LOCAL_MODEL_PATH = "/mnt/d/GoogleDriveMirror/UNI/Thesis/Files/script/models/q2"
 
     def __init__(self):
         EventSubscriptionController.subscribe_to_multiple_events([
@@ -54,20 +54,20 @@ class RunnerConfig:
         # Define Factors
         factor_model = FactorModel("model_file", 
                                    [
-                                       "qwen2-0_5b-instruct-q4_k_m.gguf",
-                                       "qwen2.5-1.5b-instruct-q4_k_m.gguf",
-                                       "phi-2.Q4_K_M.gguf",
-                                       "qwen2.5-3b-instruct-q4_k_m.gguf",
-                                       "qwen2.5-7b-instruct-q4_k_m.gguf",
-                                       "OLMoE-1B-7B-0125-Instruct-Q4_K_M.gguf",
-                                       "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
-                                       "gemma-2-9b-it-Q4_K_M.gguf"
+                                        "qwen2-0_5b-instruct-q4_k_m.gguf",
+                                        "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+                                        "phi-2.Q4_K_M.gguf",
+                                        "qwen2.5-3b-instruct-q4_k_m.gguf",
+                                        "qwen2.5-7b-instruct-q4_k_m.gguf",
+                                        "OLMoE-1B-7B-0125-Instruct-Q4_K_M.gguf",
+                                        "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+                                        "gemma-2-9b-it-Q4_K_M.gguf"
                                    ]
                                    )
         
         self.run_table_model = RunTableModel(
             factors=[factor_model],
-            repetitions=1,
+            repetitions=30,
             data_columns=[
                 'model_response',
                 
@@ -93,6 +93,8 @@ class RunnerConfig:
                 
                 # --- Device Stats ---
                 'battery_capacity',         # Percentage
+                'min_battery_capacity',     # Percentage
+                'max_battery_capacity',     # Percentage
                 'min_temperature',          # Celsius
                 'max_temperature',          # Celsius
                 'average_temperature'       # Celsius
@@ -156,7 +158,7 @@ class RunnerConfig:
         subprocess.run(f"{self.ADB_PATH} -s {self.DEVICE_ID} shell dumpsys deviceidle whitelist +com.example.batterymanager_utility", shell=True)
 
         # 7. Warm-Up phase
-        WARMUP_MODEL = "qwen2-0_5b-instruct-q4_k_m.gguf"
+        WARMUP_MODEL = "Phi-2-iq4_xs.gguf"
         
         article_text = (
             "The World Wide Web (WWW) was invented by British scientist Tim Berners-Lee "
@@ -182,6 +184,8 @@ class RunnerConfig:
         subprocess.run(f"{self.ADB_PATH} -s {self.DEVICE_ID} shell \"{cmd}\"", shell=True)
         output.console_log("--> [WARMUP] Done.")
         output.console_log("--> [SETUP] Done.")
+        output.console_log("--> Waiting for 400 seconds...")
+        time.sleep(500)
 
     def start_run(self, context: RunnerContext) -> None:
         # Clear logcat to ensure clean slate for this specific run
@@ -226,7 +230,7 @@ class RunnerConfig:
                 f"<start_of_turn>model\n"
             )
         elif "phi-2" in model.lower():
-            final_prompt = f"Instruct: Summarize the following text.\n{context_text}\nOutput:"
+            final_prompt = f"Summarize the following text.\n{context_text}\nOutput:"
         elif "llama-3" in model.lower():
             final_prompt = (
                 f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n"
@@ -362,6 +366,8 @@ class RunnerConfig:
         avg_voltage = statistics.mean(voltages_V) if voltages_V else 0
         avg_power = statistics.mean(power_readings) if power_readings else 0
         avg_capacity = statistics.mean(capacities_pct) if capacities_pct else 0
+        min_battery = min(capacities_pct) if capacities_pct else 0
+        max_battery = max(capacities_pct) if capacities_pct else 0
         avg_temp = statistics.mean(temps_c) if temps_c else 0
         min_temp = min(temps_c) if temps_c else 0
         max_temp = max(temps_c) if temps_c else 0
@@ -396,6 +402,8 @@ class RunnerConfig:
             'total_energy_consumption': round(total_energy_joules, 4),
             'energy_per_token': round(energy_per_token, 4),
             'battery_capacity': round(avg_capacity, 2),
+            'min_battery_capacity': round(min_battery, 2),
+            'max_battery_capacity': round(max_battery, 2),
             'average_temperature': round(avg_temp, 2),
             'min_temperature': round(min_temp, 2),
             'max_temperature': round(max_temp, 2)
