@@ -13,7 +13,7 @@ import re
 import statistics
 import os
 import glob
-import json  # Added for the new parser
+import json
 
 class RunnerConfig:
     ROOT_DIR = Path(dirname(realpath(__file__)))
@@ -22,11 +22,11 @@ class RunnerConfig:
     name = "s25_llama_thesis_experiment"
     results_output_path = ROOT_DIR / 'results'
     operation_type = OperationType.AUTO
-    time_between_runs_in_ms = 200000  # 3 min cool-down between runs
+    time_between_runs_in_ms = 200000  # 200 second cool-down between runs
 
     # --- Device & ADB Settings ---
     ADB_PATH = "adb" 
-    DEVICE_ID = "192.168.43.162:5555"  # "192.168.43.227:5555" | "R5CY50M8TDM"
+    DEVICE_ID = "192.168.43.162:5555" 
     REMOTE_DIR = "/data/local/tmp"
     BINARY_NAME = "llama-cli"
     
@@ -54,14 +54,23 @@ class RunnerConfig:
         # Define Factors
         factor_model = FactorModel("model_file", 
                                    [
-                                        "qwen2-0_5b-instruct-q4_k_m.gguf",
-                                        "qwen2.5-1.5b-instruct-q4_k_m.gguf",
-                                        "phi-2.Q4_K_M.gguf",
-                                        "qwen2.5-3b-instruct-q4_k_m.gguf",
-                                        "qwen2.5-7b-instruct-q4_k_m.gguf",
-                                        "OLMoE-1B-7B-0125-Instruct-Q4_K_M.gguf",
-                                        "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
-                                        "gemma-2-9b-it-Q4_K_M.gguf"
+                                       #"qwen2-0_5b-instruct-q4_k_m.gguf",
+                                       #"qwen2.5-1.5b-instruct-q4_k_m.gguf",
+                                       #"phi-2.Q4_K_M.gguf",
+                                       #"qwen2.5-3b-instruct-q4_k_m.gguf",
+                                       #"OLMoE-1B-7B-0125-Instruct-Q4_K_M.gguf",
+                                       #"qwen2.5-7b-instruct-q4_k_m.gguf",
+                                       #"Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+                                       #"gemma-2-9b-it-Q4_K_M.gguf",
+
+                                       #"Qwen2-0.5b-instruct-iq4_xs.gguf",
+                                       #"Qwen2.5-1.5B-Instruct-IQ4_XS.gguf",
+                                       #"Phi-2-iq4_xs.gguf",
+                                       #"Qwen2.5-3B-Instruct-IQ4_XS.gguf",
+                                       #"OLMoE-1B-7B-0125-Instruct-i1-IQ4_XS.gguf",
+                                       #"Qwen2.5-7B-Instruct-IQ4_XS.gguf",
+                                       #"Meta-Llama-3.1-8B-Instruct-IQ4_XS.gguf",
+                                       "gemma-2-9b-it-IQ4_XS.gguf"
                                    ]
                                    )
         
@@ -97,7 +106,14 @@ class RunnerConfig:
                 'max_battery_capacity',     # Percentage
                 'min_temperature',          # Celsius
                 'max_temperature',          # Celsius
-                'average_temperature'       # Celsius
+                'average_temperature',      # Celsius
+
+                # --- Memory Stats ---
+                'peak_memory',              # MiB
+                'model_weight',             # MiB
+                'KV_cache',                 # MiB
+                'context_RAM',              # MiB
+                'compute_RAM'               # MiB
             ]
         )
         return self.run_table_model
@@ -158,7 +174,7 @@ class RunnerConfig:
         subprocess.run(f"{self.ADB_PATH} -s {self.DEVICE_ID} shell dumpsys deviceidle whitelist +com.example.batterymanager_utility", shell=True)
 
         # 7. Warm-Up phase
-        WARMUP_MODEL = "Phi-2-iq4_xs.gguf"
+        WARMUP_MODEL = "gemma-2-9b-it-IQ4_XS.gguf"
         
         article_text = (
             "The World Wide Web (WWW) was invented by British scientist Tim Berners-Lee "
@@ -175,7 +191,7 @@ class RunnerConfig:
             f"-p 'Instruct: Summarize the following text.\nText: {article_text}\nOutput:' "
             f"-st "
             f"-v "
-            f"-n 128 "
+            f"-n 100 --ignore-eos "
             f"-c 512 -t 8 --temp 0 "
             f"> /dev/null 2>&1"
         )
@@ -185,7 +201,7 @@ class RunnerConfig:
         output.console_log("--> [WARMUP] Done.")
         output.console_log("--> [SETUP] Done.")
         output.console_log("--> Waiting for 400 seconds...")
-        time.sleep(500)
+        time.sleep(200)
 
     def start_run(self, context: RunnerContext) -> None:
         # Clear logcat to ensure clean slate for this specific run
@@ -206,7 +222,8 @@ class RunnerConfig:
         time.sleep(2)
 
     def interact(self, context: RunnerContext) -> None:
-        model = context.execute_run["model_file"]
+        # REVERTED: Using context.execute_run as originally provided
+        model = context.execute_run["model_file"] 
         
         # Define paths
         remote_log_file = "/data/local/tmp/llama_output.txt"
@@ -229,20 +246,28 @@ class RunnerConfig:
                 f"Summarize the following text.\nText: {context_text}<end_of_turn>\n"
                 f"<start_of_turn>model\n"
             )
+            stop_tokens = [107]
+
         elif "phi-2" in model.lower():
             final_prompt = f"Summarize the following text.\n{context_text}\nOutput:"
+            stop_tokens = [50256]
+
         elif "llama-3" in model.lower():
             final_prompt = (
                 f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n"
                 f"Summarize the following text.\nText: {context_text}<|eot_id|>"
                 f"<|start_header_id|>assistant<|end_header_id|>\n\n"
             )
+            stop_tokens = [128009]
+
         elif "olmoe" in model.lower():
             final_prompt = (
                 f"<|endoftext|><|user|>\n"
                 f"Summarize the following text.\nText: {context_text}\n"
                 f"<|assistant|>\n"
             )
+            stop_tokens = [50279]
+
         else:
             final_prompt = (
                 f"<|im_start|>user\n"
@@ -250,7 +275,9 @@ class RunnerConfig:
                 f"<|im_end|>\n"
                 f"<|im_start|>assistant\n"
             )
+            stop_tokens = [151643, 151645]
 
+        bias_args = " ".join([f"--logit-bias {id}-inf" for id in stop_tokens])
         # 5. Cmd
         # Ensure we capture stdout/stderr to the file for the parser to work
         cmd = (
@@ -260,7 +287,9 @@ class RunnerConfig:
             f"-p '{final_prompt}' "
             f"-st "
             f"-v "
-            f"-n 128 "
+            f"-n 100 "
+            f"--ignore-eos "
+            f"{bias_args} "
             f"-c 512 -t 8 --temp 0 "
             f"> {remote_log_file} 2>&1"
         )
@@ -297,10 +326,21 @@ class RunnerConfig:
             'time_to_first_token': 0.0
         }
         
+        # Initialize Memory Metrics default
+        memory_metrics = {
+            "kv_cache_size_mb": 0.0,
+            "peak_memory_mb": 0.0,
+            "model_weight_mb": 0.0,
+            "context_ram_mb": 0.0,
+            "compute_ram_mb": 0.0
+        }
+        
         if os.path.exists(llama_log_path):
             try:
                 # Use the new Robust Parsing Logic
                 llama_metrics = self._parse_llama_log_file(str(llama_log_path))
+                # Parse Memory Metrics
+                memory_metrics = self._parse_llama_memory(str(llama_log_path))
             except Exception as e:
                 output.console_log(f"Error parsing llama logs: {e}")
 
@@ -406,7 +446,14 @@ class RunnerConfig:
             'max_battery_capacity': round(max_battery, 2),
             'average_temperature': round(avg_temp, 2),
             'min_temperature': round(min_temp, 2),
-            'max_temperature': round(max_temp, 2)
+            'max_temperature': round(max_temp, 2),
+
+            # Memory Stats
+            'peak_memory': memory_metrics.get("peak_memory_mb", 0.0),
+            'model_weight': memory_metrics.get("model_weight_mb", 0.0),
+            'KV_cache': memory_metrics.get("kv_cache_size_mb", 0.0),
+            'context_RAM': memory_metrics.get("context_ram_mb", 0.0),
+            'compute_RAM': memory_metrics.get("compute_ram_mb", 0.0)
         }
     
     def after_experiment(self):
@@ -519,3 +566,37 @@ class RunnerConfig:
         content = re.sub(r'^\s*[\d\.]+\s*ms.*', '', content, flags=re.MULTILINE)
         
         return content.strip()
+    
+    def _parse_llama_memory(self, file_path):
+        metrics = {
+            "kv_cache_size_mb": 0.0,
+            "peak_memory_mb": 0.0,
+            "model_weight_mb": 0.0,
+            "context_ram_mb": 0.0,
+            "compute_ram_mb": 0.0
+        }
+
+        if not os.path.exists(file_path):
+            output.console_log(f"Error: The file '{file_path}' was not found.")
+            return metrics
+
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            log_content = f.read()
+
+        # 1. Extract KV Cache Size
+        # Target: "llama_kv_cache: size =    84.00 MiB"
+        kv_match = re.search(r"llama_kv_cache:\s+size\s+=\s+([\d\.]+)\s+MiB", log_content)
+        if kv_match:
+            metrics["kv_cache_size_mb"] = float(kv_match.group(1))
+
+        # 2. Extract Memory Breakdown
+        # Target: "5612 =  4937 +     168 +     507"
+        # Format: Total = Model + Context + Compute
+        mem_match = re.search(r"(\d+)\s+=\s+(\d+)\s+\+\s+(\d+)\s+\+\s+(\d+)", log_content)
+        if mem_match:
+            metrics["peak_memory_mb"] = float(mem_match.group(1))    # Group 1: Total
+            metrics["model_weight_mb"] = float(mem_match.group(2))   # Group 2: Model
+            metrics["context_ram_mb"] = float(mem_match.group(3))    # Group 3: Context
+            metrics["compute_ram_mb"] = float(mem_match.group(4))    # Group 4: Compute
+
+        return metrics
