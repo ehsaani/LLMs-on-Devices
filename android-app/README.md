@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="https://github.com/ehsaani/LLMs-on-Devices/raw/main/figures/app_icon.png" alt="App Icon" width="200">
-</p>
-
 # 🧠 LlamaAndroid: On-Device LLM Inference for Android
 
 

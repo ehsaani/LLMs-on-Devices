@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://github.com/eziyoo/LLMs-on-Devices/raw/main/figures/app_icon.png" alt="App Icon" width="200">
+</p>
+
 # 🌱 Sustainability Is Not Linear!
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -73,7 +77,7 @@ If you use this pipeline or our findings in your research, please consider citin
 ```bibtex
 @article{ehsani2026sustainability,
   title={Sustainability Is Not Linear: Quantifying Performance, Energy, and Privacy Trade-offs in On-Device Intelligence},
-  author={Ehsani, Eziyo and Giamattei, Luca and Malavolta, Ivano and Pietrantuono, Roberto},
+  author={Eziyo Ehsani, Ivano Malavolta, Roberto Pietrantuono},
   year={2026},
   institution={University of Naples Federico II & Vrije Universiteit Amsterdam}
 }
