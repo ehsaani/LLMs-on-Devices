@@ -1,109 +1,79 @@
-<p align="center">
-  <img src="https://github.com/ehsaani/LLMs-on-Devices/raw/main/figures/app_icon.png" alt="App Icon" width="200">
-</p>
+# 🌱 Green Mobile Intelligence: On-Device LLM Energy Profiling
 
-# 🧠 LlamaAndroid: On-Device LLM Inference for Android
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10](https://img.shields.io/badge/python-3.10-blue.svg)]()
+[![Platform: Android](https://img.shields.io/badge/Platform-Android_16-green.svg)]()
 
+> **Note:** This repository contains the experimental pipeline and configuration scripts for the paper: *"Sustainability Is Not Linear: Quantifying Performance, Energy, and Privacy Trade-offs in On-Device Intelligence"*. This work was authored by Eziyo Ehsani, Luca Giamattei, Ivano Malavolta, and Roberto Pietrantuono.
 
-Welcome to the official repository for device LLMs project: **on-device large language model inference using Llama.cpp on Android**. This project explores the feasibility, performance, and usability of running quantized LLMs natively on Android devices — with no server-side dependency.
+## 📖 Overview
+Deploying Large Language Models (LLMs) on mobile devices promises enhanced privacy, low latency, and offline accessibility, but is fundamentally constrained by limited memory, thermal headroom, and battery capacity. 
 
----
+This project provides a reproducible experimental pipeline to systematically evaluate the trade-offs between energy consumption, inference latency, memory footprint, and generation quality for on-device LLMs. It utilizes a non-intrusive energy profiling approach based on Android's BatteryManager API, testing eight open-source models ranging from 0.5B to 9B parameters.
 
-## 📱 About the Project
+## 🚀 Key Findings
+* **The Quantization-Energy Paradox:** While importance-aware quantization (IQ4_XS) significantly reduces peak memory, it does not consistently reduce end-to-end energy on CPU-based inference compared to mixed-precision formats (Q4_K_M). De-quantization overhead can offset memory bandwidth savings.
+* **Architecture > Parameter Count:** Model architecture and active computation per token are stronger predictors of on-device energy and latency than the specific 4-bit quantization variant. 
+* **The Promise of Sparsity:** Mid-sized and sparse models (e.g., Mixture-of-Experts) achieve favorable quality-per-joule trade-offs compared to larger dense counterparts.
+* **Metric Bias:** Reference-based evaluation metrics (BERTScore) exhibit extractive bias in this setting, occasionally favoring smaller models that copy input text. Reference-free LLM-as-a-judge protocols (G-Eval) better reflect abstractive quality and coherence.
 
-This Android app demonstrates how to:
-- Run LLMs directly on-device using [llama.cpp](https://github.com/ggerganov/llama.cpp)
-- Download GGUF models dynamically from Hugging Face
-- Interact with the model via a simple chat interface
-- Benchmark performance under different configurations
+## 🛠 Experimental Setup
+### Hardware
+* **Device:** Samsung Galaxy S25 Ultra
+* **SoC:** Qualcomm Snapdragon 8 Elite
+* **RAM:** 12 GB
+* **OS:** Android 16
 
-This setup is designed to help evaluate the **efficiency and limitations of local inference** on mobile hardware, especially for research and offline use cases.
+### Software Stack
+* **Inference Engine:** `llama.cpp` (CPU-only inference).
+* **Orchestration:** `Experiment Runner` framework via Python.
+* **Telemetry:** On-device Android BatteryManager API monitoring via Wireless ADB.
 
----
+## ⚙️ Methodology & Pipeline
+The core of this repository is the `RunnerConfig.py` script, which automates a strict, isolated experimental loop to ensure reproducible energy measurements on an unrooted device. 
 
-## 📂 Project Structure
+The pipeline strictly enforces:
+1. **Device State Control:** Forces the screen on at minimum brightness and disables background activity to prevent OS heuristics from skewing CPU power usage.
+2. **Measurement Synchronization:** Starts the BatteryManager service with a fixed 2-second spin-up before inference and terminates it immediately after text generation to minimize capturing post-inference idle tail power.
+3. **Energy Integration:** Captures voltage and current at 100ms intervals (10Hz), subtracts baseline idle power, and calculates net energy consumed (Joules) using trapezoidal integration.
+4. **Thermal Management:** Enforces a 200-second cool-down period between runs to reduce thermal carryover and mitigate throttling effects.
 
-```
-thesis-repo/
-├── android-app                           # Android app code (Jetpack Compose UI)
-├── figures                               # Figures and visual assets
-├── benchmark dataset downloader          # A script for downloading HuggingFace datasets
-├── hugging face GGUF Models extract      # A extracter of GGUF models
-└── README.md                             # You're here!
-```
+## 📊 Evaluated Models
+Models evaluated under `Q4_K_M` and `IQ4_XS` quantization schemes:
+* Qwen2-0.5B
+* Qwen2.5-1.5B
+* Phi-2 (2.78B)
+* Qwen2.5-3B
+* OLMoE-1B-7B (6.919B)
+* Qwen2.5-7B
+* Meta-Llama-3.1-8B
+* Gemma-2-9B
 
----
+## 💻 Getting Started
+### Prerequisites
+* Python 3.10+
+* Android platform-tools (`adb`) configured globally
+* `llama.cpp` built for Android (AArch64)
+* A target Android device connected via Wireless ADB
 
-## 🔧 Setup Instructions
+### Execution
+1. Update `DEVICE_ID`, `LOCAL_LLAMA_BUILD`, and `LOCAL_MODEL_PATH` in `RunnerConfig.py` to match your local environment and device IP.
+2. Run the experiment through your Experiment Runner framework.
+3. The script will automatically push required binaries/models, execute the warmup sequence, and begin the iterative testing matrix, saving outputs and parsed power metrics to the `/results` directory.
 
-### 1. Clone with Submodule
+## 🎓 Authors & Contact
+**Eziyo Ehsani**
+* MSc in Data Science, University of Naples Federico II
+* [LinkedIn](https://www.linkedin.com/in/eziyo/)
 
-```bash
-git clone https://eziyoo/LLMs-on-Devices
-cd LLMs-on-Devices
-```
+**Co-Authors:** Luca Giamattei, Prof. Ivano Malavolta, Prof. Roberto Pietrantuono
 
-### 2. Open in Android Studio
-
-- Make sure you’re using the **NDK** and **CMake**
-- Sync Gradle and let Android Studio build native sources
-
-### 3. Run on Device
-
-- Connect your Android device or use an emulator with sufficient RAM
-- Click **Run** in Android Studio
-- Use the dropdown to select and download a GGUF model
-- Start chatting!
-
----
-
-## 🧪 Models Included
-
-The app includes downloadable links to quantized versions of(update continuously):
-
-- ✅ Phi-2 7B (Q4_0)
-- ✅ TinyLlama 1.1B (f16)
-- ✅ Phi-2 DPO (Q3_K_M)
-- ✅ Add your own model easily via the `MainActivity.kt` model list
-
----
-
-## 📊 Benchmarking
-
-Use the **Bench** button in the app to run performance tests. Results include:
-- Token throughput
-- Warm-up time
-- Memory usage
-
-This feature helps evaluate real-world performance across model sizes and device types.
-
----
-
-## 📚 Thesis Focus
-
-My thesis explores:
-- Feasibility of local LLM inference on consumer-grade Android hardware
-- Trade-offs in model size, quantization, latency, and UX
-- Application design challenges with native + Compose + JNI
-
----
-
-## 🔗 Dependencies
-
-- [llama.cpp (fork)](https://github.com/ehsaani/llama.cpp)
-- Android Jetpack Compose
-- CMake + NDK (for JNI integration)
-
----
-
-## 🙋‍♂️ Author
-
-**M. Ehsani**  
-[Università degli Studi di Napoli Federico II]    
-🔗 [www.linkedin.com/in/eziyo]
-
----
-
-## 📝 License
-
-This project is for academic and research purposes. See individual licenses for dependencies like `llama.cpp`.
+## 📝 Citation
+If you use this pipeline or our findings in your research, please consider citing our paper:
+```bibtex
+@article{ehsani2026sustainability,
+  title={Sustainability Is Not Linear: Quantifying Performance, Energy, and Privacy Trade-offs in On-Device Intelligence},
+  author={Ehsani, Eziyo and Giamattei, Luca and Malavolta, Ivano and Pietrantuono, Roberto},
+  year={2026},
+  institution={University of Naples Federico II & Vrije Universiteit Amsterdam}
+}
