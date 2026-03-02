@@ -39,8 +39,8 @@ thesis-repo/
 ### 1. Clone with Submodule
 
 ```bash
-git clone https://github.com/your-username/thesis-repo.git
-cd thesis-repo
+git clone https://eziyoo/LLMs-on-Devices
+cd LLMs-on-Devices
 ```
 
 ### 2. Open in Android Studio

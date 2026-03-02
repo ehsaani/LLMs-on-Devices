@@ -1,95 +1,119 @@
 package com.example.llama
 
-import android.content.Context
+import android.app.DownloadManager
 import android.net.Uri
 import android.util.Log
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
-import kotlinx.coroutines.Dispatchers
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.core.database.getLongOrNull
+import androidx.core.net.toUri
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileOutputStream
-import java.io.InputStream
 
-data class Downloadable(
-    val name: String,
-    val destination: File,
-    var uri: Uri? = null  // SAF Uri if loaded from user-picked folder
-) {
+data class Downloadable(val name: String, val source: Uri, val destination: File) {
     companion object {
+        @JvmStatic
         private val tag: String? = this::class.qualifiedName
 
         sealed interface State
-        data object Ready : State
-        data object Loaded : State
-        data class Error(val message: String) : State
+        data object Ready: State
+        data class Downloading(val id: Long): State
+        data class Downloaded(val downloadable: Downloadable): State
+        data class Error(val message: String): State
 
         @JvmStatic
         @Composable
-        fun Button(viewModel: MainViewModel, item: Downloadable) {
-            var status by remember { mutableStateOf<State>(Ready) }
+        fun Button(viewModel: MainViewModel, dm: DownloadManager, item: Downloadable) {
+            var status: State by remember {
+                mutableStateOf(
+                    if (item.destination.exists()) Downloaded(item)
+                    else Ready
+                )
+            }
+            var progress by remember { mutableDoubleStateOf(0.0) }
+
             val coroutineScope = rememberCoroutineScope()
 
-            fun onClick(context: Context) {
-                coroutineScope.launch {
-                    try {
-                        // If model comes from SAF → copy into app storage
-                        val modelFile = if (item.uri != null) {
-                            copyFromSaf(context, item)
-                        } else {
-                            item.destination
+            suspend fun waitForDownload(result: Downloading, item: Downloadable): State {
+                while (true) {
+                    val cursor = dm.query(DownloadManager.Query().setFilterById(result.id))
+
+                    if (cursor == null) {
+                        Log.e(tag, "dm.query() returned null")
+                        return Error("dm.query() returned null")
+                    }
+
+                    if (!cursor.moveToFirst() || cursor.count < 1) {
+                        cursor.close()
+                        Log.i(tag, "cursor.moveToFirst() returned false or cursor.count < 1, download canceled?")
+                        return Ready
+                    }
+
+                    val pix = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                    val tix = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                    val sofar = cursor.getLongOrNull(pix) ?: 0
+                    val total = cursor.getLongOrNull(tix) ?: 1
+                    cursor.close()
+
+                    if (sofar == total) {
+                        return Downloaded(item)
+                    }
+
+                    progress = (sofar * 1.0) / total
+
+                    delay(1000L)
+                }
+            }
+
+            fun onClick() {
+                when (val s = status) {
+                    is Downloaded -> {
+                        viewModel.load(item.destination.path)
+                    }
+
+                    is Downloading -> {
+                        coroutineScope.launch {
+                            status = waitForDownload(s, item)
+                        }
+                    }
+
+                    else -> {
+                        item.destination.delete()
+
+                        val request = DownloadManager.Request(item.source).apply {
+                            setTitle("Downloading model")
+                            setDescription("Downloading model: ${item.name}")
+                            setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI)
+                            setDestinationUri(item.destination.toUri())
                         }
 
-                        if (modelFile != null && modelFile.exists()) {
-                            viewModel.load(modelFile.path)
-                            status = Loaded
-                        } else {
-                            status = Error("Model file not found")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(tag, "Load failed", e)
-                        status = Error("Load failed: ${e.message}")
+                        viewModel.log("Saving ${item.name} to ${item.destination.path}")
+                        Log.i(tag, "Saving ${item.name} to ${item.destination.path}")
+
+                        val id = dm.enqueue(request)
+                        status = Downloading(id)
+                        onClick()
                     }
                 }
             }
 
-            androidx.compose.ui.platform.LocalContext.current.let { context ->
-                Button(onClick = { onClick(context) }) {
-                    when (status) {
-                        is Ready -> Text("Load ${item.name}")
-                        is Loaded -> Text("Loaded ${item.name}")
-                        is Error -> Text("Error loading ${item.name}")
-                    }
+            Button(onClick = { onClick() }, enabled = status !is Downloading) {
+                when (status) {
+                    is Downloading -> Text(text = "Downloading ${(progress * 100).toInt()}%")
+                    is Downloaded -> Text("Load ${item.name}")
+                    is Ready -> Text("Download ${item.name}")
+                    is Error -> Text("Download ${item.name}")
                 }
             }
         }
 
-        /** Copy model from SAF Uri into app’s private storage */
-        private suspend fun copyFromSaf(context: Context, item: Downloadable): File? {
-            return withContext(Dispatchers.IO) {
-                try {
-                    val uri = item.uri ?: return@withContext null
-                    val inputStream: InputStream? =
-                        context.contentResolver.openInputStream(uri)
-
-                    val dstDir = File(context.getExternalFilesDir(null), "models")
-                    if (!dstDir.exists()) dstDir.mkdirs()
-                    val dstFile = File(dstDir, item.name)
-
-                    inputStream?.use { input ->
-                        FileOutputStream(dstFile).use { output ->
-                            input.copyTo(output)
-                        }
-                    }
-                    Log.i(tag, "Copied ${item.name} → ${dstFile.path}")
-                    dstFile
-                } catch (e: Exception) {
-                    Log.e(tag, "Failed to copy from SAF", e)
-                    null
-                }
-            }
-        }
     }
 }
